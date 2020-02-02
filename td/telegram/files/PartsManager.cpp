@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -228,7 +228,9 @@ bool PartsManager::is_part_in_streaming_limit(int part_i) const {
     return true;
   }
 
-  auto is_intersect_with = [&](int64 begin, int64 end) { return max(begin, offset_begin) < min(end, offset_end); };
+  auto is_intersect_with = [&](int64 begin, int64 end) {
+    return max(begin, offset_begin) < min(end, offset_end);
+  };
 
   auto streaming_begin = streaming_offset_;
   auto streaming_end = streaming_offset_ + streaming_limit_;

@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -11,8 +11,8 @@
 
 #include "td/telegram/ContactsManager.h"
 #include "td/telegram/Global.h"
-#include "td/telegram/MessageId.h"
 #include "td/telegram/misc.h"
+#include "td/telegram/net/DcId.h"
 #include "td/telegram/PasswordManager.h"
 #include "td/telegram/Td.h"
 #include "td/telegram/UpdatesManager.h"
@@ -367,8 +367,8 @@ class SendPaymentFormQuery : public Td::ResultHandler {
         promise_.set_value(make_tl_object<td_api::paymentResult>(true, string()));
         return;
       }
-      case telegram_api::payments_paymentVerficationNeeded::ID: {
-        auto result = move_tl_object_as<telegram_api::payments_paymentVerficationNeeded>(payment_result);
+      case telegram_api::payments_paymentVerificationNeeded::ID: {
+        auto result = move_tl_object_as<telegram_api::payments_paymentVerificationNeeded>(payment_result);
         promise_.set_value(make_tl_object<td_api::paymentResult>(false, std::move(result->url_)));
         return;
       }
@@ -486,7 +486,35 @@ class ClearSavedInfoQuery : public Td::ResultHandler {
     promise_.set_error(std::move(status));
   }
 };
+/*
+class SendLiteRequestQuery : public Td::ResultHandler {
+  Promise<td_api::object_ptr<td_api::tonLiteServerResponse>> promise_;
 
+ public:
+  explicit SendLiteRequestQuery(Promise<td_api::object_ptr<td_api::tonLiteServerResponse>> &&promise)
+      : promise_(std::move(promise)) {
+  }
+
+  void send(BufferSlice request) {
+    send_query(G()->net_query_creator().create(create_storer(telegram_api::wallet_sendLiteRequest(std::move(request))),
+                                               DcId::main(), NetQuery::Type::Common, NetQuery::AuthFlag::Off));
+  }
+
+  void on_result(uint64 id, BufferSlice packet) override {
+    auto result_ptr = fetch_result<telegram_api::wallet_sendLiteRequest>(packet);
+    if (result_ptr.is_error()) {
+      return on_error(id, result_ptr.move_as_error());
+    }
+
+    auto response = result_ptr.move_as_ok();
+    promise_.set_value(td_api::make_object<td_api::tonLiteServerResponse>(response->response_.as_slice().str()));
+  }
+
+  void on_error(uint64 id, Status status) override {
+    promise_.set_error(std::move(status));
+  }
+};
+*/
 bool operator==(const LabeledPricePart &lhs, const LabeledPricePart &rhs) {
   return lhs.label == rhs.label && lhs.amount == rhs.amount;
 }
@@ -868,5 +896,9 @@ void delete_saved_order_info(Promise<Unit> &&promise) {
 void delete_saved_credentials(Promise<Unit> &&promise) {
   G()->td().get_actor_unsafe()->create_handler<ClearSavedInfoQuery>(std::move(promise))->send(true, false);
 }
-
+/*
+void send_ton_lite_server_request(Slice request, Promise<td_api::object_ptr<td_api::tonLiteServerResponse>> &&promise) {
+  G()->td().get_actor_unsafe()->create_handler<SendLiteRequestQuery>(std::move(promise))->send(BufferSlice{request});
+}
+*/
 }  // namespace td

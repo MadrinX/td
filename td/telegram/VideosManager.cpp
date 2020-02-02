@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -10,7 +10,6 @@
 #include "td/telegram/td_api.h"
 #include "td/telegram/telegram_api.h"
 
-#include "td/telegram/AuthManager.h"
 #include "td/telegram/files/FileManager.h"
 #include "td/telegram/Td.h"
 
@@ -201,7 +200,7 @@ SecretInputMedia VideosManager::get_secret_input_media(FileId video_file_id,
     return SecretInputMedia{};
   }
   if (file_view.has_remote_location()) {
-    input_file = file_view.remote_location().as_input_encrypted_file();
+    input_file = file_view.main_remote_location().as_input_encrypted_file();
   }
   if (!input_file) {
     return SecretInputMedia{};
@@ -228,12 +227,12 @@ tl_object_ptr<telegram_api::InputMedia> VideosManager::get_input_media(
   if (file_view.is_encrypted()) {
     return nullptr;
   }
-  if (file_view.has_remote_location() && !file_view.remote_location().is_web() && input_file == nullptr) {
+  if (file_view.has_remote_location() && !file_view.main_remote_location().is_web() && input_file == nullptr) {
     int32 flags = 0;
     if (ttl != 0) {
       flags |= telegram_api::inputMediaDocument::TTL_SECONDS_MASK;
     }
-    return make_tl_object<telegram_api::inputMediaDocument>(flags, file_view.remote_location().as_input_document(),
+    return make_tl_object<telegram_api::inputMediaDocument>(flags, file_view.main_remote_location().as_input_document(),
                                                             ttl);
   }
   if (file_view.has_url()) {
@@ -260,11 +259,8 @@ tl_object_ptr<telegram_api::InputMedia> VideosManager::get_input_media(
     if (!video->file_name.empty()) {
       attributes.push_back(make_tl_object<telegram_api::documentAttributeFilename>(video->file_name));
     }
-    int32 flags = 0;
+    int32 flags = telegram_api::inputMediaUploadedDocument::NOSOUND_VIDEO_MASK;
     vector<tl_object_ptr<telegram_api::InputDocument>> added_stickers;
-    if (ttl != 0 || !td_->auth_manager_->is_bot()) {
-      flags |= telegram_api::inputMediaUploadedDocument::NOSOUND_VIDEO_MASK;
-    }
     if (video->has_stickers) {
       flags |= telegram_api::inputMediaUploadedDocument::STICKERS_MASK;
       added_stickers = td_->file_manager_->get_input_documents(video->sticker_file_ids);

@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -150,23 +150,21 @@ Status SqliteDb::commit_transaction() {
   return Status::OK();
 }
 
-bool SqliteDb::is_encrypted() {
-  return exec("SELECT count(*) FROM sqlite_master").is_error();
+Status SqliteDb::check_encryption() {
+  return exec("SELECT count(*) FROM sqlite_master");
 }
 
 Result<SqliteDb> SqliteDb::open_with_key(CSlice path, const DbKey &db_key) {
   SqliteDb db;
   TRY_STATUS(db.init(path));
   if (!db_key.is_empty()) {
-    if (!db.is_encrypted()) {
+    if (db.check_encryption().is_ok()) {
       return Status::Error("No key is needed");
     }
     auto key = db_key_to_sqlcipher_key(db_key);
     TRY_STATUS(db.exec(PSLICE() << "PRAGMA key = " << key));
   }
-  if (db.is_encrypted()) {
-    return Status::Error("Wrong key or database is corrupted");
-  }
+  TRY_STATUS_PREFIX(db.check_encryption(), "Can't open database: ");
   return std::move(db);
 }
 

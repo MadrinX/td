@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -20,17 +20,14 @@
 
 namespace td {
 
-#define get_erase_logevent_promise(...) get_erase_logevent_promise_impl(__FILE__, __LINE__, __VA_ARGS__)
-
-inline Promise<Unit> get_erase_logevent_promise_impl(const char *file, int line, uint64 logevent_id,
-                                                     Promise<Unit> promise = Promise<Unit>()) {
+inline Promise<Unit> get_erase_logevent_promise(uint64 logevent_id, Promise<Unit> promise = Promise<Unit>()) {
   if (logevent_id == 0) {
     return promise;
   }
 
-  return PromiseCreator::lambda([file, line, logevent_id, promise = std::move(promise)](Result<Unit> result) mutable {
+  return PromiseCreator::lambda([logevent_id, promise = std::move(promise)](Result<Unit> result) mutable {
     if (!G()->close_flag()) {
-      binlog_erase(G()->get_td_db_impl(file, line)->get_binlog_impl(file, line), logevent_id);
+      binlog_erase(G()->td_db()->get_binlog(), logevent_id);
     }
 
     promise.set_result(std::move(result));
@@ -39,13 +36,12 @@ inline Promise<Unit> get_erase_logevent_promise_impl(const char *file, int line,
 
 template <class StorerT>
 void store_time(double time_at, StorerT &storer) {
-  double server_time = storer.context()->server_time();
   if (time_at == 0) {
     store(-1.0, storer);
   } else {
     double time_left = max(time_at - Time::now(), 0.0);
     store(time_left, storer);
-    store(server_time, storer);
+    store(get_server_time(), storer);
   }
 }
 

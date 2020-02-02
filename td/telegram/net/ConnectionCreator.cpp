@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -39,7 +39,6 @@
 #include "td/utils/Time.h"
 #include "td/utils/tl_helpers.h"
 
-#include <algorithm>
 #include <utility>
 
 namespace td {
@@ -578,6 +577,7 @@ void ConnectionCreator::on_online(bool online_flag) {
 }
 
 void ConnectionCreator::on_pong(size_t hash) {
+  G()->save_server_time();
   if (active_proxy_id_ != 0) {
     auto now = G()->unix_time();
     int32 &last_used = proxy_last_used_date_[active_proxy_id_];
@@ -663,7 +663,7 @@ Result<mtproto::TransportType> ConnectionCreator::get_transport_type(const Proxy
     CHECK(info.option != nullptr);
     string proxy_authorization;
     if (!proxy.user().empty() || !proxy.password().empty()) {
-      proxy_authorization = "|basic " + td::base64_encode(PSLICE() << proxy.user() << ':' << proxy.password());
+      proxy_authorization = "|basic " + base64_encode(PSLICE() << proxy.user() << ':' << proxy.password());
     }
     return mtproto::TransportType{
         mtproto::TransportType::Http, 0,
@@ -686,14 +686,13 @@ Result<SocketFd> ConnectionCreator::find_connection(const Proxy &proxy, const IP
   TRY_RESULT(info, dc_options_set_.find_connection(
                        dc_id, allow_media_only, proxy.use_proxy() && proxy.use_socks5_proxy(), prefer_ipv6, only_http));
   extra.stat = info.stat;
-  TRY_RESULT(transport_type, get_transport_type(proxy, info));
-  extra.transport_type = std::move(transport_type);
+  TRY_RESULT_ASSIGN(extra.transport_type, get_transport_type(proxy, info));
 
   extra.debug_str = PSTRING() << " to " << (info.option->is_media_only() ? "MEDIA " : "") << dc_id
                               << (info.use_http ? " over HTTP" : "");
 
   if (proxy.use_mtproto_proxy()) {
-    extra.debug_str = PSTRING() << "Mtproto " << proxy_ip_address << extra.debug_str;
+    extra.debug_str = PSTRING() << "MTProto " << proxy_ip_address << extra.debug_str;
 
     LOG(INFO) << "Create: " << extra.debug_str;
     return SocketFd::open(proxy_ip_address);
@@ -725,10 +724,12 @@ ActorOwn<> ConnectionCreator::prepare_connection(SocketFd socket_fd, const Proxy
     class Callback : public TransparentProxy::Callback {
      public:
       explicit Callback(Promise<ConnectionData> promise,
-                        unique_ptr<mtproto::RawConnection::StatsCallback> stats_callback, bool use_connection_token)
+                        unique_ptr<mtproto::RawConnection::StatsCallback> stats_callback, bool use_connection_token,
+                        bool was_connected)
           : promise_(std::move(promise))
           , stats_callback_(std::move(stats_callback))
-          , use_connection_token_(use_connection_token) {
+          , use_connection_token_(use_connection_token)
+          , was_connected_(was_connected) {
       }
       void set_result(Result<SocketFd> result) override {
         if (result.is_error()) {
@@ -757,13 +758,14 @@ ActorOwn<> ConnectionCreator::prepare_connection(SocketFd socket_fd, const Proxy
      private:
       Promise<ConnectionData> promise_;
       StateManager::ConnectionToken connection_token_;
-      bool was_connected_{false};
       unique_ptr<mtproto::RawConnection::StatsCallback> stats_callback_;
       bool use_connection_token_;
+      bool was_connected_{false};
     };
     LOG(INFO) << "Start " << (proxy.use_socks5_proxy() ? "Socks5" : (proxy.use_http_tcp_proxy() ? "HTTP" : "TLS"))
               << ": " << debug_str;
-    auto callback = make_unique<Callback>(std::move(promise), std::move(stats_callback), use_connection_token);
+    auto callback = make_unique<Callback>(std::move(promise), std::move(stats_callback), use_connection_token,
+                                          !proxy.use_socks5_proxy());
     if (proxy.use_socks5_proxy()) {
       return ActorOwn<>(create_actor<Socks5>(PSLICE() << actor_name_prefix << "Socks5", std::move(socket_fd),
                                              mtproto_ip, proxy.user().str(), proxy.password().str(),
@@ -812,14 +814,12 @@ void ConnectionCreator::client_loop(ClientInfo &client) {
   VLOG(connections) << "In client_loop: " << tag("client", format::as_hex(client.hash));
 
   // Remove expired ready connections
-  client.ready_connections.erase(
-      std::remove_if(client.ready_connections.begin(), client.ready_connections.end(),
-                     [&, expires_at = Time::now_cached() - ClientInfo::READY_CONNECTIONS_TIMEOUT](auto &v) {
-                       bool drop = v.second < expires_at;
-                       VLOG_IF(connections, drop) << "Drop expired " << tag("connection", v.first.get());
-                       return drop;
-                     }),
-      client.ready_connections.end());
+  td::remove_if(client.ready_connections,
+                [&, expires_at = Time::now_cached() - ClientInfo::READY_CONNECTIONS_TIMEOUT](auto &v) {
+                  bool drop = v.second < expires_at;
+                  VLOG_IF(connections, drop) << "Drop expired " << tag("connection", v.first.get());
+                  return drop;
+                });
 
   // Send ready connections into promises
   {
@@ -1010,6 +1010,7 @@ void ConnectionCreator::client_add_connection(size_t hash, Result<unique_ptr<mtp
 
 void ConnectionCreator::client_wakeup(size_t hash) {
   LOG(INFO) << tag("hash", format::as_hex(hash)) << " wakeup";
+  G()->save_server_time();
   client_loop(clients_[hash]);
 }
 

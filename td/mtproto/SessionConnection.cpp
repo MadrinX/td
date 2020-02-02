@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -7,6 +7,7 @@
 #include "td/mtproto/SessionConnection.h"
 
 #include "td/mtproto/AuthData.h"
+#include "td/mtproto/AuthKey.h"
 #include "td/mtproto/CryptoStorer.h"
 #include "td/mtproto/PacketStorer.h"
 #include "td/mtproto/Transport.h"
@@ -330,7 +331,7 @@ Status SessionConnection::on_packet(const MsgInfo &info,
 
     InvalidContainer = 64
   };
-  Slice common = " BUG! CALL FOR A DEVELOPER! Session will be closed";
+  Slice common = ". BUG! CALL FOR A DEVELOPER! Session will be closed";
   switch (bad_msg_notification.error_code_) {
     case MsgIdTooLow: {
       LOG(WARNING) << bad_info << ": MessageId is too low. Message will be re-sent";
@@ -339,18 +340,18 @@ Status SessionConnection::on_packet(const MsgInfo &info,
       break;
     }
     case MsgIdTooHigh: {
-      LOG(ERROR) << bad_info << ": MessageId is too high. Session will be closed";
+      LOG(WARNING) << bad_info << ": MessageId is too high. Session will be closed";
       // All this queries will be re-sent by parent
       to_send_.clear();
       callback_->on_session_failed(Status::Error("MessageId is too high"));
       return Status::Error("MessageId is too high");
     }
     case MsgIdMod4: {
-      LOG(ERROR) << bad_info << ": MessageId is not divisible by 4." << common;
+      LOG(ERROR) << bad_info << ": MessageId is not divisible by 4" << common;
       return Status::Error("MessageId is not divisible by 4");
     }
     case MsgIdCollision: {
-      LOG(ERROR) << bad_info << ": Container and older message MessageId collision." << common;
+      LOG(ERROR) << bad_info << ": Container and older message MessageId collision" << common;
       return Status::Error("Container and older message MessageId collision");
     }
 
@@ -361,29 +362,29 @@ Status SessionConnection::on_packet(const MsgInfo &info,
     }
 
     case SeqNoTooLow: {
-      LOG(ERROR) << bad_info << ": SeqNo is too low." << common;
+      LOG(ERROR) << bad_info << ": SeqNo is too low" << common;
       return Status::Error("SeqNo is too low");
     }
     case SeqNoTooHigh: {
-      LOG(ERROR) << bad_info << ": SeqNo is too high." << common;
+      LOG(ERROR) << bad_info << ": SeqNo is too high" << common;
       return Status::Error("SeqNo is too high");
     }
     case SeqNoNotEven: {
-      LOG(ERROR) << bad_info << ": SeqNo is not even for an irrelevant message." << common;
+      LOG(ERROR) << bad_info << ": SeqNo is not even for an irrelevant message" << common;
       return Status::Error("SeqNo is not even for an irrelevant message");
     }
     case SeqNoNotOdd: {
-      LOG(ERROR) << bad_info << ": SeqNo is not odd for an irrelevant message." << common;
+      LOG(ERROR) << bad_info << ": SeqNo is not odd for an irrelevant message" << common;
       return Status::Error("SeqNo is not odd for an irrelevant message");
     }
 
     case InvalidContainer: {
-      LOG(ERROR) << bad_info << ": Invalid Contailer." << common;
+      LOG(ERROR) << bad_info << ": Invalid Contailer" << common;
       return Status::Error("Invalid Contailer");
     }
 
     default: {
-      LOG(ERROR) << bad_info << ": Unknown error [code:" << bad_msg_notification.error_code_ << "]." << common;
+      LOG(ERROR) << bad_info << ": Unknown error [code:" << bad_msg_notification.error_code_ << "]" << common;
       return Status::Error("Unknown error code");
     }
   }
@@ -808,8 +809,9 @@ std::pair<uint64, BufferSlice> SessionConnection::encrypted_bind(int64 perm_key,
   info.salt = Random::secure_int64();
   info.session_id = Random::secure_int64();
 
-  auto packet = BufferWriter{Transport::write(query_storer, auth_data_->get_main_auth_key(), &info), 0, 0};
-  Transport::write(query_storer, auth_data_->get_main_auth_key(), &info, packet.as_slice());
+  const AuthKey &main_auth_key = auth_data_->get_main_auth_key();
+  auto packet = BufferWriter{Transport::write(query_storer, main_auth_key, &info), 0, 0};
+  Transport::write(query_storer, main_auth_key, &info, packet.as_slice());
   return std::make_pair(query.message_id, packet.as_buffer_slice());
 }
 

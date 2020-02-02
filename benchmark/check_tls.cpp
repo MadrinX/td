@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -53,7 +53,9 @@ td::Result<TlsInfo> test_tls(const td::string &url) {
 
   td::string request;
 
-  auto add_string = [&](td::Slice data) { request.append(data.data(), data.size()); };
+  auto add_string = [&](td::Slice data) {
+    request.append(data.data(), data.size());
+  };
   auto add_random = [&](size_t length) {
     while (length-- > 0) {
       request += static_cast<char>(td::Random::secure_int32());

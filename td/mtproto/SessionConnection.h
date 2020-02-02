@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -202,7 +202,9 @@ class SessionConnection
   auto set_buffer_slice(BufferSlice *buffer_slice) TD_WARN_UNUSED_RESULT {
     auto old_buffer_slice = current_buffer_slice_;
     current_buffer_slice_ = buffer_slice;
-    return ScopeExit() + [&to = current_buffer_slice_, from = old_buffer_slice] { to = from; };
+    return ScopeExit() + [&to = current_buffer_slice_, from = old_buffer_slice] {
+      to = from;
+    };
   }
 
   Status parse_message(TlParser &parser, MsgInfo *info, Slice *packet, bool crypto_flag = true) TD_WARN_UNUSED_RESULT;

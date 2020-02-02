@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -10,6 +10,7 @@
 
 #include "td/telegram/AnimationsManager.h"
 #include "td/telegram/AudiosManager.h"
+#include "td/telegram/AuthManager.h"
 #include "td/telegram/Document.h"
 #include "td/telegram/Document.hpp"
 #include "td/telegram/DocumentsManager.h"
@@ -198,6 +199,7 @@ class WebPagesManager::WebPage {
   int32 duration = 0;
   string author;
   Document document;
+  vector<Document> documents;
   WebPageInstantView instant_view;
 
   FileSourceId file_source_id;
@@ -220,6 +222,7 @@ class WebPagesManager::WebPage {
     bool has_instant_view = !instant_view.is_empty;
     bool is_instant_view_v2 = instant_view.is_v2;
     bool has_no_hash = true;
+    bool has_documents = !documents.empty();
     BEGIN_STORE_FLAGS();
     STORE_FLAG(has_type);
     STORE_FLAG(has_site_name);
@@ -234,6 +237,7 @@ class WebPagesManager::WebPage {
     STORE_FLAG(has_instant_view);
     STORE_FLAG(has_no_hash);
     STORE_FLAG(is_instant_view_v2);
+    STORE_FLAG(has_documents);
     END_STORE_FLAGS();
 
     store(url, storer);
@@ -269,6 +273,9 @@ class WebPagesManager::WebPage {
     if (has_document) {
       store(document, storer);
     }
+    if (has_documents) {
+      store(documents, storer);
+    }
   }
 
   template <class ParserT>
@@ -287,6 +294,7 @@ class WebPagesManager::WebPage {
     bool has_instant_view;
     bool is_instant_view_v2;
     bool has_no_hash;
+    bool has_documents;
     BEGIN_PARSE_FLAGS();
     PARSE_FLAG(has_type);
     PARSE_FLAG(has_site_name);
@@ -301,6 +309,7 @@ class WebPagesManager::WebPage {
     PARSE_FLAG(has_instant_view);
     PARSE_FLAG(has_no_hash);
     PARSE_FLAG(is_instant_view_v2);
+    PARSE_FLAG(has_documents);
     END_PARSE_FLAGS();
 
     parse(url, parser);
@@ -342,6 +351,9 @@ class WebPagesManager::WebPage {
     if (has_document) {
       parse(document, parser);
     }
+    if (has_documents) {
+      parse(documents, parser);
+    }
 
     if (has_instant_view) {
       instant_view.is_empty = false;
@@ -349,6 +361,16 @@ class WebPagesManager::WebPage {
     if (is_instant_view_v2) {
       instant_view.is_v2 = true;
     }
+  }
+
+  friend bool operator==(const WebPage &lhs, const WebPage &rhs) {
+    return lhs.url == rhs.url && lhs.display_url == rhs.display_url && lhs.type == rhs.type &&
+           lhs.site_name == rhs.site_name && lhs.title == rhs.title && lhs.description == rhs.description &&
+           lhs.photo == rhs.photo && lhs.type == rhs.type && lhs.embed_url == rhs.embed_url &&
+           lhs.embed_type == rhs.embed_type && lhs.embed_dimensions == rhs.embed_dimensions &&
+           lhs.duration == rhs.duration && lhs.author == rhs.author && lhs.document == rhs.document &&
+           lhs.documents == rhs.documents && lhs.instant_view.is_empty == rhs.instant_view.is_empty &&
+           lhs.instant_view.is_v2 == rhs.instant_view.is_v2;
   }
 };
 
@@ -391,20 +413,10 @@ WebPageId WebPagesManager::on_get_web_page(tl_object_ptr<telegram_api::WebPage> 
         web_pages_.erase(web_page_id);
       }
 
-      update_messages_content(web_page_id, false);
-      if (!G()->parameters().use_message_db) {
-        //        update_messages_content(web_page_id, false);
-      } else {
+      on_web_page_changed(web_page_id, false);
+      if (G()->parameters().use_message_db) {
         LOG(INFO) << "Delete " << web_page_id << " from database";
-        G()->td_db()->get_sqlite_pmc()->erase(get_web_page_database_key(web_page_id), Auto()
-                                              /*
-              PromiseCreator::lambda([web_page_id](Result<> result) {
-                if (result.is_ok()) {
-                  send_closure(G()->web_pages_manager(), &WebPagesManager::update_messages_content, web_page_id, false);
-                }
-              })
-            */
-        );
+        G()->td_db()->get_sqlite_pmc()->erase(get_web_page_database_key(web_page_id), Auto());
         G()->td_db()->get_sqlite_pmc()->erase(get_web_page_instant_view_database_key(web_page_id), Auto());
       }
 
@@ -464,8 +476,23 @@ WebPageId WebPagesManager::on_get_web_page(tl_object_ptr<telegram_api::WebPage> 
         if (document_id == telegram_api::document::ID) {
           auto parsed_document = td_->documents_manager_->on_get_document(
               move_tl_object_as<telegram_api::document>(web_page->document_), owner_dialog_id);
-          page->document = parsed_document;
+          page->document = std::move(parsed_document);
         }
+      }
+      for (auto &attribute : web_page->attributes_) {
+        CHECK(attribute != nullptr);
+        page->documents.clear();
+        for (auto &document : attribute->documents_) {
+          int32 document_id = document->get_id();
+          if (document_id == telegram_api::document::ID) {
+            auto parsed_document = td_->documents_manager_->on_get_document(
+                move_tl_object_as<telegram_api::document>(document), owner_dialog_id);
+            if (!parsed_document.empty()) {
+              page->documents.push_back(std::move(parsed_document));
+            }
+          }
+        }
+        // TODO attribute->settings_
       }
       if (web_page->flags_ & WEBPAGE_FLAG_HAS_INSTANT_VIEW) {
         on_get_web_page_instant_view(page.get(), std::move(web_page->cached_page_), web_page->hash_, owner_dialog_id);
@@ -492,7 +519,12 @@ void WebPagesManager::update_web_page(unique_ptr<WebPage> web_page, WebPageId we
   auto &page = web_pages_[web_page_id];
   auto old_file_ids = get_web_page_file_ids(page.get());
   WebPageInstantView old_instant_view;
+  bool is_changed = true;
   if (page != nullptr) {
+    if (*page == *web_page) {
+      is_changed = false;
+    }
+
     old_instant_view = std::move(page->instant_view);
     web_page->logevent_id = page->logevent_id;
   } else {
@@ -514,9 +546,9 @@ void WebPagesManager::update_web_page(unique_ptr<WebPage> web_page, WebPageId we
 
   on_get_web_page_by_url(page->url, web_page_id, from_database);
 
-  update_messages_content(web_page_id, true);
+  if (is_changed && !from_database) {
+    on_web_page_changed(web_page_id, true);
 
-  if (!from_database) {
     save_web_page(page.get(), web_page_id, from_binlog);
   }
 }
@@ -600,15 +632,17 @@ bool WebPagesManager::need_use_old_instant_view(const WebPageInstantView &new_in
 }
 
 void WebPagesManager::on_get_web_page_by_url(const string &url, WebPageId web_page_id, bool from_database) {
+  auto &cached_web_page_id = url_to_web_page_id_[url];
   if (!from_database && G()->parameters().use_message_db) {
     if (web_page_id.is_valid()) {
-      G()->td_db()->get_sqlite_pmc()->set(get_web_page_url_database_key(url), to_string(web_page_id.get()), Auto());
+      if (cached_web_page_id != web_page_id) {  //not already saved
+        G()->td_db()->get_sqlite_pmc()->set(get_web_page_url_database_key(url), to_string(web_page_id.get()), Auto());
+      }
     } else {
       G()->td_db()->get_sqlite_pmc()->erase(get_web_page_url_database_key(url), Auto());
     }
   }
 
-  auto &cached_web_page_id = url_to_web_page_id_[url];
   if (cached_web_page_id.is_valid() && web_page_id.is_valid() && web_page_id != cached_web_page_id) {
     LOG(ERROR) << "Url \"" << url << "\" preview is changed from " << cached_web_page_id << " to " << web_page_id;
   }
@@ -616,10 +650,37 @@ void WebPagesManager::on_get_web_page_by_url(const string &url, WebPageId web_pa
   cached_web_page_id = web_page_id;
 }
 
-void WebPagesManager::wait_for_pending_web_page(DialogId dialog_id, MessageId message_id, WebPageId web_page_id) {
-  LOG(INFO) << "Waiting for " << web_page_id << " needed in " << message_id << " in " << dialog_id;
-  pending_web_pages_[web_page_id].emplace(dialog_id, message_id);
-  pending_web_pages_timeout_.add_timeout_in(web_page_id.get(), 1.0);
+void WebPagesManager::register_web_page(WebPageId web_page_id, FullMessageId full_message_id) {
+  if (!web_page_id.is_valid()) {
+    return;
+  }
+
+  LOG(INFO) << "Register " << web_page_id << " from " << full_message_id;
+  bool is_inserted = web_page_messages_[web_page_id].insert(full_message_id).second;
+  CHECK(is_inserted);
+
+  if (!td_->auth_manager_->is_bot() && !have_web_page_force(web_page_id)) {
+    LOG(INFO) << "Waiting for " << web_page_id << " needed in " << full_message_id;
+    pending_web_pages_timeout_.add_timeout_in(web_page_id.get(), 1.0);
+  }
+}
+
+void WebPagesManager::unregister_web_page(WebPageId web_page_id, FullMessageId full_message_id) {
+  if (!web_page_id.is_valid()) {
+    return;
+  }
+
+  LOG(INFO) << "Unregister " << web_page_id << " from " << full_message_id;
+  auto &message_ids = web_page_messages_[web_page_id];
+  auto is_deleted = message_ids.erase(full_message_id);
+  CHECK(is_deleted);
+
+  if (message_ids.empty()) {
+    web_page_messages_.erase(web_page_id);
+    if (pending_get_web_pages_.count(web_page_id) == 0) {
+      pending_web_pages_timeout_.cancel_timeout(web_page_id.get());
+    }
+  }
 }
 
 void WebPagesManager::on_get_web_page_preview_success(int64 request_id, const string &url,
@@ -646,7 +707,6 @@ void WebPagesManager::on_get_web_page_preview_success(int64 request_id, const st
   if (web_page_id.is_valid() && !have_web_page(web_page_id)) {
     pending_get_web_pages_[web_page_id].emplace(request_id,
                                                 std::make_pair(url, std::move(promise)));  // TODO MultiPromise ?
-    pending_web_pages_timeout_.add_timeout_in(web_page_id.get(), 1.0);
     return;
   }
 
@@ -806,6 +866,10 @@ void WebPagesManager::reload_web_page_instant_view(WebPageId web_page_id) {
                  true, std::move(result));
   });
 
+  if (G()->close_flag()) {
+    return promise.set_error(Status::Error(500, "Request aborted"));
+  }
+
   td_->create_handler<GetWebPageQuery>(std::move(promise))
       ->send(web_page->url, web_page->instant_view.is_full ? web_page->instant_view.hash : 0);
 }
@@ -834,10 +898,11 @@ void WebPagesManager::on_load_web_page_instant_view_from_database(WebPageId web_
 
   WebPageInstantView result;
   if (!value.empty()) {
-    if (log_event_parse(result, value).is_error()) {
+    auto status = log_event_parse(result, value);
+    if (status.is_error()) {
       result = WebPageInstantView();
 
-      LOG(ERROR) << "Erase instant view in " << web_page_id << " from database";
+      LOG(ERROR) << "Erase instant view in " << web_page_id << " from database because of " << status.message();
       G()->td_db()->get_sqlite_pmc()->erase(get_web_page_instant_view_database_key(web_page_id), Auto());
     }
   }
@@ -1020,6 +1085,10 @@ void WebPagesManager::on_load_web_page_by_url_from_database(WebPageId web_page_i
 }
 
 void WebPagesManager::reload_web_page_by_url(const string &url, Promise<Unit> &&promise) {
+  if (G()->close_flag()) {
+    return promise.set_error(Status::Error(500, "Request aborted"));
+  }
+
   LOG(INFO) << "Reload url \"" << url << '"';
   td_->create_handler<GetWebPageQuery>(std::move(promise))->send(url, 0);
 }
@@ -1107,15 +1176,26 @@ tl_object_ptr<td_api::webPageInstantView> WebPagesManager::get_web_page_instant_
                                                     web_page_instant_view->is_rtl, web_page_instant_view->is_full);
 }
 
-void WebPagesManager::update_messages_content(WebPageId web_page_id, bool have_web_page) {
-  LOG(INFO) << "Update messages awaiting " << web_page_id;
-  auto it = pending_web_pages_.find(web_page_id);
-  if (it != pending_web_pages_.end()) {
-    auto full_message_ids = std::move(it->second);
-    pending_web_pages_.erase(it);
+void WebPagesManager::on_web_page_changed(WebPageId web_page_id, bool have_web_page) {
+  LOG(INFO) << "Updated " << web_page_id;
+  auto it = web_page_messages_.find(web_page_id);
+  if (it != web_page_messages_.end()) {
+    vector<FullMessageId> full_message_ids;
+    for (auto full_message_id : it->second) {
+      full_message_ids.push_back(full_message_id);
+    }
+    CHECK(!full_message_ids.empty());
     for (auto full_message_id : full_message_ids) {
-      send_closure_later(G()->messages_manager(), &MessagesManager::on_update_message_web_page, full_message_id,
-                         have_web_page);
+      if (!have_web_page) {
+        td_->messages_manager_->delete_pending_message_web_page(full_message_id);
+      } else {
+        td_->messages_manager_->on_external_update_message_content(full_message_id);
+      }
+    }
+    if (have_web_page) {
+      CHECK(web_page_messages_[web_page_id].size() == full_message_ids.size());
+    } else {
+      CHECK(web_page_messages_.count(web_page_id) == 0);
     }
   }
   auto get_it = pending_get_web_pages_.find(web_page_id);
@@ -1152,9 +1232,13 @@ void WebPagesManager::on_pending_web_page_timeout_callback(void *web_pages_manag
 }
 
 void WebPagesManager::on_pending_web_page_timeout(WebPageId web_page_id) {
+  if (have_web_page(web_page_id)) {
+    return;
+  }
+
   int32 count = 0;
-  auto it = pending_web_pages_.find(web_page_id);
-  if (it != pending_web_pages_.end()) {
+  auto it = web_page_messages_.find(web_page_id);
+  if (it != web_page_messages_.end()) {
     vector<FullMessageId> full_message_ids;
     for (auto full_message_id : it->second) {
       full_message_ids.push_back(full_message_id);
@@ -1174,7 +1258,7 @@ void WebPagesManager::on_pending_web_page_timeout(WebPageId web_page_id) {
     }
   }
   if (count == 0) {
-    LOG(WARNING) << "Have no messages waiting for " << web_page_id;
+    LOG(WARNING) << "Have no messages and requests waiting for " << web_page_id;
   }
 }
 
@@ -1199,62 +1283,60 @@ void WebPagesManager::on_get_web_page_instant_view(WebPage *web_page, tl_object_
   std::unordered_map<int64, FileId> audios;
   std::unordered_map<int64, FileId> documents;
   std::unordered_map<int64, FileId> videos;
+  std::unordered_map<int64, FileId> voice_notes;
+  std::unordered_map<int64, FileId> others;
+  auto get_map = [&](Document::Type document_type) {
+    switch (document_type) {
+      case Document::Type::Animation:
+        return &animations;
+      case Document::Type::Audio:
+        return &audios;
+      case Document::Type::General:
+        return &documents;
+      case Document::Type::Video:
+        return &videos;
+      case Document::Type::VoiceNote:
+        return &voice_notes;
+      default:
+        return &others;
+    }
+  };
+
   for (auto &document_ptr : page->documents_) {
     if (document_ptr->get_id() == telegram_api::document::ID) {
       auto document = move_tl_object_as<telegram_api::document>(document_ptr);
       auto document_id = document->id_;
       auto parsed_document = td_->documents_manager_->on_get_document(std::move(document), owner_dialog_id);
-      if (parsed_document.type == Document::Type::Animation) {
-        animations.emplace(document_id, parsed_document.file_id);
-      } else if (parsed_document.type == Document::Type::Audio) {
-        audios.emplace(document_id, parsed_document.file_id);
-      } else if (parsed_document.type == Document::Type::General) {
-        documents.emplace(document_id, parsed_document.file_id);
-      } else if (parsed_document.type == Document::Type::Video) {
-        videos.emplace(document_id, parsed_document.file_id);
-      } else {
-        LOG(ERROR) << "Receive document of the wrong type: " << parsed_document;
+      if (!parsed_document.empty()) {
+        get_map(parsed_document.type)->emplace(document_id, parsed_document.file_id);
       }
     }
   }
-  if (web_page->document.type == Document::Type::Animation) {
-    auto file_view = td_->file_manager_->get_file_view(web_page->document.file_id);
-    if (file_view.has_remote_location()) {
-      animations.emplace(file_view.remote_location().get_id(), web_page->document.file_id);
-    } else {
-      LOG(ERROR) << "Animation has no remote location";
-    }
+  if (!others.empty()) {
+    auto file_view = td_->file_manager_->get_file_view(others.begin()->second);
+    LOG(ERROR) << "Receive document of an unexpected type " << file_view.get_type();
   }
-  if (web_page->document.type == Document::Type::Audio) {
-    auto file_view = td_->file_manager_->get_file_view(web_page->document.file_id);
+
+  auto add_document = [&](const Document &document) {
+    auto file_view = td_->file_manager_->get_file_view(document.file_id);
     if (file_view.has_remote_location()) {
-      audios.emplace(file_view.remote_location().get_id(), web_page->document.file_id);
+      get_map(document.type)->emplace(file_view.remote_location().get_id(), document.file_id);
     } else {
-      LOG(ERROR) << "Audio has no remote location";
+      LOG(ERROR) << document.type << " has no remote location";
     }
+  };
+  if (!web_page->document.empty()) {
+    add_document(web_page->document);
   }
-  if (web_page->document.type == Document::Type::General) {
-    auto file_view = td_->file_manager_->get_file_view(web_page->document.file_id);
-    if (file_view.has_remote_location()) {
-      documents.emplace(file_view.remote_location().get_id(), web_page->document.file_id);
-    } else {
-      LOG(ERROR) << "Document has no remote location";
-    }
-  }
-  if (web_page->document.type == Document::Type::Video) {
-    auto file_view = td_->file_manager_->get_file_view(web_page->document.file_id);
-    if (file_view.has_remote_location()) {
-      videos.emplace(file_view.remote_location().get_id(), web_page->document.file_id);
-    } else {
-      LOG(ERROR) << "Video has no remote location";
-    }
+  for (auto &document : web_page->documents) {
+    add_document(document);
   }
 
   LOG(INFO) << "Receive a web page instant view with " << page->blocks_.size() << " blocks, " << animations.size()
             << " animations, " << audios.size() << " audios, " << documents.size() << " documents, " << photos.size()
-            << " photos and " << videos.size() << " videos";
+            << " photos, " << videos.size() << " videos and " << voice_notes.size() << " voice notes";
   web_page->instant_view.page_blocks =
-      get_web_page_blocks(td_, std::move(page->blocks_), animations, audios, documents, photos, videos);
+      get_web_page_blocks(td_, std::move(page->blocks_), animations, audios, documents, photos, videos, voice_notes);
   web_page->instant_view.is_v2 = (page->flags_ & telegram_api::page::V2_MASK) != 0;
   web_page->instant_view.is_rtl = (page->flags_ & telegram_api::page::RTL_MASK) != 0;
   web_page->instant_view.hash = hash;
@@ -1287,9 +1369,7 @@ class WebPagesManager::WebPageLogEvent {
   template <class ParserT>
   void parse(ParserT &parser) {
     td::parse(web_page_id, parser);
-    CHECK(web_page_out == nullptr);
-    web_page_out = make_unique<WebPage>();
-    td::parse(*web_page_out, parser);
+    td::parse(web_page_out, parser);
   }
 };
 
@@ -1405,9 +1485,11 @@ void WebPagesManager::on_load_web_page_from_database(WebPageId web_page_id, stri
       auto result = make_unique<WebPage>();
       auto status = log_event_parse(*result, value);
       if (status.is_error()) {
-        LOG(FATAL) << status << ": " << format::as_hex_dump<4>(Slice(value));
+        LOG(ERROR) << "Failed to parse web page loaded from database: " << status
+                   << ", value = " << format::as_hex_dump<4>(Slice(value));
+      } else {
+        update_web_page(std::move(result), web_page_id, true, true);
       }
-      update_web_page(std::move(result), web_page_id, true, true);
     }
   } else {
     // web page has already been loaded from the server
@@ -1478,6 +1560,9 @@ vector<FileId> WebPagesManager::get_web_page_file_ids(const WebPage *web_page) c
   vector<FileId> result = photo_get_file_ids(web_page->photo);
   if (!web_page->document.empty()) {
     web_page->document.append_file_ids(td_, result);
+  }
+  for (auto &document : web_page->documents) {
+    document.append_file_ids(td_, result);
   }
   if (!web_page->instant_view.is_empty) {
     for (auto &page_block : web_page->instant_view.page_blocks) {

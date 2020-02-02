@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -13,6 +13,7 @@
 #include "td/telegram/files/FileLocation.h"
 #include "td/telegram/files/FileManager.h"
 #include "td/telegram/files/FileType.h"
+#include "td/telegram/misc.h"
 #include "td/telegram/net/DcId.h"
 #include "td/telegram/Photo.h"
 #include "td/telegram/StickersManager.h"
@@ -282,8 +283,6 @@ Document DocumentsManager::on_get_document(RemoteDocument remote_document, Dialo
       return {};
     }
 
-    fix_animated_sticker_type();
-
     if (document_type != Document::Type::VoiceNote) {
       thumbnail = get_secret_thumbnail_photo_size(td_->file_manager_.get(), std::move(document->thumb_),
                                                   owner_dialog_id, document->thumb_w_, document->thumb_h_);
@@ -331,8 +330,6 @@ Document DocumentsManager::on_get_document(RemoteDocument remote_document, Dialo
       default:
         UNREACHABLE();
     }
-
-    fix_animated_sticker_type();
   }
 
   LOG(DEBUG) << "Receive document with id = " << id << " of type " << document_type;
@@ -340,6 +337,8 @@ Document DocumentsManager::on_get_document(RemoteDocument remote_document, Dialo
     LOG(ERROR) << "Wrong dc_id = " << dc_id;
     return {};
   }
+
+  file_name = strip_empty_characters(file_name, 255, true);
 
   auto suggested_file_name = file_name;
   if (suggested_file_name.empty()) {
@@ -524,7 +523,7 @@ SecretInputMedia DocumentsManager::get_secret_input_media(FileId document_file_i
     return SecretInputMedia{};
   }
   if (file_view.has_remote_location()) {
-    input_file = file_view.remote_location().as_input_encrypted_file();
+    input_file = file_view.main_remote_location().as_input_encrypted_file();
   }
   if (!input_file) {
     return SecretInputMedia{};
@@ -551,8 +550,8 @@ tl_object_ptr<telegram_api::InputMedia> DocumentsManager::get_input_media(
   if (file_view.is_encrypted()) {
     return nullptr;
   }
-  if (file_view.has_remote_location() && !file_view.remote_location().is_web() && input_file == nullptr) {
-    return make_tl_object<telegram_api::inputMediaDocument>(0, file_view.remote_location().as_input_document(), 0);
+  if (file_view.has_remote_location() && !file_view.main_remote_location().is_web() && input_file == nullptr) {
+    return make_tl_object<telegram_api::inputMediaDocument>(0, file_view.main_remote_location().as_input_document(), 0);
   }
   if (file_view.has_url()) {
     return make_tl_object<telegram_api::inputMediaDocumentExternal>(0, file_view.url(), 0);

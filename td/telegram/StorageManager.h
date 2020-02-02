@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -83,15 +83,13 @@ class StorageManager : public Actor {
   // Gc
   ActorOwn<FileGcWorker> gc_worker_;
   std::vector<Promise<FileStats>> pending_run_gc_;
-  uint32 gc_generation_{0};
-  FileGcParameters gc_parameters_;
 
   uint32 last_gc_timestamp_ = 0;
   double next_gc_at_ = 0;
 
-  void on_all_files(Result<FileStats> r_file_stats, bool dummy);
+  void on_all_files(FileGcParameters gc_parameters, Result<FileStats> r_file_stats, bool dummy);
   void create_gc_worker();
-  void on_gc_finished(Result<FileStats> r_file_stats, bool dummy);
+  void on_gc_finished(int32 dialog_limit, Result<FileStats> r_file_stats, bool dummy);
 
   void close_stats_worker();
   void close_gc_worker();

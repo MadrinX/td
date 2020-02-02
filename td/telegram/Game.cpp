@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -95,6 +95,10 @@ tl_object_ptr<td_api::game> Game::get_game_object(Td *td) const {
       id_, short_name_, title_, get_formatted_text_object(text_), description_,
       get_photo_object(td->file_manager_.get(), &photo_),
       td->animations_manager_->get_animation_object(animation_file_id_, "get_game_object"));
+}
+
+bool Game::has_input_media() const {
+  return bot_user_id_.is_valid();
 }
 
 tl_object_ptr<telegram_api::inputMediaGame> Game::get_input_media_game(const Td *td) const {

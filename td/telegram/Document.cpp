@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -54,6 +54,14 @@ void Document::append_file_ids(const Td *td, vector<FileId> &file_ids) const {
   if (thumbnail_file_id.is_valid()) {
     file_ids.push_back(thumbnail_file_id);
   }
+}
+
+bool operator==(const Document &lhs, const Document &rhs) {
+  return lhs.type == rhs.type && lhs.file_id == rhs.file_id;
+}
+
+bool operator!=(const Document &lhs, const Document &rhs) {
+  return !(lhs == rhs);
 }
 
 StringBuilder &operator<<(StringBuilder &string_builder, const Document::Type &document_type) {

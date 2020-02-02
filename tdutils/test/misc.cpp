@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -153,7 +153,8 @@ TEST(Misc, get_last_argument) {
 }
 
 TEST(Misc, call_n_arguments) {
-  auto f = [](int, int) {};
+  auto f = [](int, int) {
+  };
   call_n_arguments<2>(f, 1, 3, 4);
 }
 
@@ -162,7 +163,9 @@ TEST(Misc, base64) {
   ASSERT_TRUE(is_base64("dGVzdB==") == false);
   ASSERT_TRUE(is_base64("dGVzdA=") == false);
   ASSERT_TRUE(is_base64("dGVzdA") == false);
+  ASSERT_TRUE(is_base64("dGVzd") == false);
   ASSERT_TRUE(is_base64("dGVz") == true);
+  ASSERT_TRUE(is_base64("dGVz====") == false);
   ASSERT_TRUE(is_base64("") == true);
   ASSERT_TRUE(is_base64("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") == true);
   ASSERT_TRUE(is_base64("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=") == false);
@@ -174,13 +177,39 @@ TEST(Misc, base64) {
   ASSERT_TRUE(is_base64url("dGVzdB==") == false);
   ASSERT_TRUE(is_base64url("dGVzdA=") == false);
   ASSERT_TRUE(is_base64url("dGVzdA") == true);
+  ASSERT_TRUE(is_base64url("dGVzd") == false);
   ASSERT_TRUE(is_base64url("dGVz") == true);
+  ASSERT_TRUE(is_base64url("dGVz====") == false);
   ASSERT_TRUE(is_base64url("") == true);
   ASSERT_TRUE(is_base64url("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") == true);
   ASSERT_TRUE(is_base64url("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=") == false);
   ASSERT_TRUE(is_base64url("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/") == false);
   ASSERT_TRUE(is_base64url("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") == false);
   ASSERT_TRUE(is_base64url("====") == false);
+
+  ASSERT_TRUE(is_base64_characters("dGVzdA==") == false);
+  ASSERT_TRUE(is_base64_characters("dGVzdB==") == false);
+  ASSERT_TRUE(is_base64_characters("dGVzdA=") == false);
+  ASSERT_TRUE(is_base64_characters("dGVzdA") == true);
+  ASSERT_TRUE(is_base64_characters("dGVz") == true);
+  ASSERT_TRUE(is_base64_characters("") == true);
+  ASSERT_TRUE(is_base64_characters("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") == true);
+  ASSERT_TRUE(is_base64_characters("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=") == false);
+  ASSERT_TRUE(is_base64_characters("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/") == false);
+  ASSERT_TRUE(is_base64_characters("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") == false);
+  ASSERT_TRUE(is_base64_characters("====") == false);
+
+  ASSERT_TRUE(is_base64url_characters("dGVzdA==") == false);
+  ASSERT_TRUE(is_base64url_characters("dGVzdB==") == false);
+  ASSERT_TRUE(is_base64url_characters("dGVzdA=") == false);
+  ASSERT_TRUE(is_base64url_characters("dGVzdA") == true);
+  ASSERT_TRUE(is_base64url_characters("dGVz") == true);
+  ASSERT_TRUE(is_base64url_characters("") == true);
+  ASSERT_TRUE(is_base64url_characters("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") == true);
+  ASSERT_TRUE(is_base64url_characters("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=") == false);
+  ASSERT_TRUE(is_base64url_characters("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/") == false);
+  ASSERT_TRUE(is_base64url_characters("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") == false);
+  ASSERT_TRUE(is_base64url_characters("====") == false);
 
   for (int l = 0; l < 300000; l += l / 20 + l / 1000 * 500 + 1) {
     for (int t = 0; t < 10; t++) {
@@ -194,6 +223,10 @@ TEST(Misc, base64) {
       decoded = base64_decode(encoded);
       ASSERT_TRUE(decoded.is_ok());
       ASSERT_TRUE(decoded.ok() == s);
+
+      auto decoded_secure = base64_decode_secure(encoded);
+      ASSERT_TRUE(decoded_secure.is_ok());
+      ASSERT_TRUE(decoded_secure.ok().as_slice() == s);
     }
   }
 
@@ -206,6 +239,112 @@ TEST(Misc, base64) {
   ASSERT_TRUE(base64_encode("      /'.;.';≤.];,].',[.;/,.;/]/..;!@#!*(%?::;!%\";") ==
               "ICAgICAgLycuOy4nO+KJpC5dOyxdLicsWy47LywuOy9dLy4uOyFAIyEqKCU/"
               "Ojo7ISUiOw==");
+  ASSERT_TRUE(base64url_encode("ab><") == "YWI-PA");
+  ASSERT_TRUE(base64url_encode("ab><c") == "YWI-PGM");
+  ASSERT_TRUE(base64url_encode("ab><cd") == "YWI-PGNk");
+}
+
+template <class T>
+static void test_remove_if(vector<int> v, const T &func, vector<int> expected) {
+  td::remove_if(v, func);
+  if (expected != v) {
+    LOG(FATAL) << "Receive " << v << ", expected " << expected << " in remove_if";
+  }
+}
+
+TEST(Misc, remove_if) {
+  auto odd = [](int x) {
+    return x % 2 == 1;
+  };
+  auto even = [](int x) {
+    return x % 2 == 0;
+  };
+  auto all = [](int x) {
+    return true;
+  };
+  auto none = [](int x) {
+    return false;
+  };
+
+  vector<int> v{1, 2, 3, 4, 5, 6};
+  test_remove_if(v, odd, {2, 4, 6});
+  test_remove_if(v, even, {1, 3, 5});
+  test_remove_if(v, all, {});
+  test_remove_if(v, none, v);
+
+  v = vector<int>{1, 3, 5, 2, 4, 6};
+  test_remove_if(v, odd, {2, 4, 6});
+  test_remove_if(v, even, {1, 3, 5});
+  test_remove_if(v, all, {});
+  test_remove_if(v, none, v);
+
+  v.clear();
+  test_remove_if(v, odd, v);
+  test_remove_if(v, even, v);
+  test_remove_if(v, all, v);
+  test_remove_if(v, none, v);
+
+  v.push_back(-1);
+  test_remove_if(v, odd, v);
+  test_remove_if(v, even, v);
+  test_remove_if(v, all, {});
+  test_remove_if(v, none, v);
+
+  v[0] = 1;
+  test_remove_if(v, odd, {});
+  test_remove_if(v, even, v);
+  test_remove_if(v, all, {});
+  test_remove_if(v, none, v);
+
+  v[0] = 2;
+  test_remove_if(v, odd, v);
+  test_remove_if(v, even, {});
+  test_remove_if(v, all, {});
+  test_remove_if(v, none, v);
+}
+
+static void test_remove(vector<int> v, int value, vector<int> expected) {
+  bool is_found = expected != v;
+  ASSERT_EQ(is_found, td::remove(v, value));
+  if (expected != v) {
+    LOG(FATAL) << "Receive " << v << ", expected " << expected << " in remove";
+  }
+}
+
+TEST(Misc, remove) {
+  vector<int> v{1, 2, 3, 4, 5, 6};
+  test_remove(v, 0, {1, 2, 3, 4, 5, 6});
+  test_remove(v, 1, {2, 3, 4, 5, 6});
+  test_remove(v, 2, {1, 3, 4, 5, 6});
+  test_remove(v, 3, {1, 2, 4, 5, 6});
+  test_remove(v, 4, {1, 2, 3, 5, 6});
+  test_remove(v, 5, {1, 2, 3, 4, 6});
+  test_remove(v, 6, {1, 2, 3, 4, 5});
+  test_remove(v, 7, {1, 2, 3, 4, 5, 6});
+
+  v.clear();
+  test_remove(v, -1, v);
+  test_remove(v, 0, v);
+  test_remove(v, 1, v);
+}
+
+TEST(Misc, contains) {
+  td::vector<int> v{1, 3, 5, 7, 4, 2};
+  for (int i = -10; i < 20; i++) {
+    ASSERT_EQ(td::contains(v, i), (1 <= i && i <= 5) || i == 7);
+  }
+
+  v.clear();
+  ASSERT_TRUE(!td::contains(v, 0));
+  ASSERT_TRUE(!td::contains(v, 1));
+
+  td::string str = "abacaba";
+  ASSERT_TRUE(!td::contains(str, '0'));
+  ASSERT_TRUE(!td::contains(str, 0));
+  ASSERT_TRUE(!td::contains(str, 'd'));
+  ASSERT_TRUE(td::contains(str, 'a'));
+  ASSERT_TRUE(td::contains(str, 'b'));
+  ASSERT_TRUE(td::contains(str, 'c'));
 }
 
 TEST(Misc, to_integer) {
@@ -757,8 +896,12 @@ TEST(Misc, uint128) {
                                      static_cast<int64>(std::numeric_limits<int32>::min()) - 1};
 
 #if TD_HAVE_INT128
-  auto to_intrinsic = [](uint128_emulated num) { return uint128_intrinsic(num.hi(), num.lo()); };
-  auto eq = [](uint128_emulated a, uint128_intrinsic b) { return a.hi() == b.hi() && a.lo() == b.lo(); };
+  auto to_intrinsic = [](uint128_emulated num) {
+    return uint128_intrinsic(num.hi(), num.lo());
+  };
+  auto eq = [](uint128_emulated a, uint128_intrinsic b) {
+    return a.hi() == b.hi() && a.lo() == b.lo();
+  };
   auto ensure_eq = [&](uint128_emulated a, uint128_intrinsic b) {
     if (!eq(a, b)) {
       LOG(FATAL) << "[" << a.hi() << ";" << a.lo() << "] vs [" << b.hi() << ";" << b.lo() << "]";

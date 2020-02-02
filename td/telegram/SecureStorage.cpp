@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -10,6 +10,7 @@
 #include "td/utils/format.h"
 #include "td/utils/logging.h"
 #include "td/utils/misc.h"
+#include "td/utils/port/FileFd.h"
 #include "td/utils/Random.h"
 #include "td/utils/SharedSlice.h"
 
@@ -87,6 +88,18 @@ BufferSlice gen_random_prefix(int64 data_size) {
   CHECK((buff.size() + data_size) % 16 == 0);
   return buff;
 }
+
+class FileDataView : public DataView {
+ public:
+  FileDataView(FileFd &fd, int64 size);
+
+  int64 size() const override;
+  Result<BufferSlice> pread(int64 offset, int64 size) const override;
+
+ private:
+  FileFd &fd_;
+  int64 size_;
+};
 
 FileDataView::FileDataView(FileFd &fd, int64 size) : fd_(fd), size_(size) {
 }
@@ -181,7 +194,7 @@ Result<Secret> Secret::create(Slice secret) {
     return Status::Error(PSLICE() << "Wrong checksum " << checksum);
   }
   UInt256 res;
-  td::as_slice(res).copy_from(secret);
+  ::td::as_slice(res).copy_from(secret);
 
   UInt256 secret_sha256;
   sha256(secret, ::td::as_slice(secret_sha256));
@@ -191,7 +204,7 @@ Result<Secret> Secret::create(Slice secret) {
 
 Secret Secret::create_new() {
   UInt256 secret;
-  auto secret_slice = td::as_slice(secret);
+  auto secret_slice = ::td::as_slice(secret);
   Random::secure_bytes(secret_slice);
   auto checksum_diff = secret_checksum(secret_slice);
   uint8 new_byte = static_cast<uint8>((static_cast<uint32>(secret_slice.ubegin()[0]) + checksum_diff) % 255);
@@ -200,8 +213,7 @@ Secret Secret::create_new() {
 }
 
 Slice Secret::as_slice() const {
-  using td::as_slice;
-  return as_slice(secret_);
+  return ::td::as_slice(secret_);
 }
 
 int64 Secret::get_hash() const {
@@ -226,8 +238,8 @@ EncryptedSecret Secret::encrypt(Slice key, Slice salt, EnryptionAlgorithm algori
   }();
 
   UInt256 res;
-  aes_cbc_state.encrypt(as_slice(), td::as_slice(res));
-  return EncryptedSecret::create(td::as_slice(res)).move_as_ok();
+  aes_cbc_state.encrypt(as_slice(), ::td::as_slice(res));
+  return EncryptedSecret::create(::td::as_slice(res)).move_as_ok();
 }
 
 Secret::Secret(UInt256 secret, int64 hash) : secret_(secret), hash_(hash) {
@@ -238,7 +250,7 @@ Result<EncryptedSecret> EncryptedSecret::create(Slice encrypted_secret) {
     return Status::Error("Wrong encrypted secret size");
   }
   UInt256 res;
-  td::as_slice(res).copy_from(encrypted_secret);
+  ::td::as_slice(res).copy_from(encrypted_secret);
   return EncryptedSecret{res};
 }
 
@@ -256,12 +268,12 @@ Result<Secret> EncryptedSecret::decrypt(Slice key, Slice salt, EnryptionAlgorith
   }();
 
   UInt256 res;
-  aes_cbc_state.decrypt(td::as_slice(encrypted_secret_), td::as_slice(res));
-  return Secret::create(td::as_slice(res));
+  aes_cbc_state.decrypt(::td::as_slice(encrypted_secret_), ::td::as_slice(res));
+  return Secret::create(::td::as_slice(res));
 }
 
 Slice EncryptedSecret::as_slice() const {
-  return td::as_slice(encrypted_secret_);
+  return ::td::as_slice(encrypted_secret_);
 }
 
 EncryptedSecret::EncryptedSecret(UInt256 encrypted_secret) : encrypted_secret_(encrypted_secret) {

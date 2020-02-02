@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -106,7 +106,9 @@ class Td final : public NetQueryCallback {
   void schedule_get_terms_of_service(int32 expires_in);
 
   void on_result(NetQueryPtr query) override;
-  void on_connection_state_changed(StateManager::State new_state);
+
+  void on_update_server_time_difference();
+
   void on_authorization_lost();
 
   void on_online_updated(bool force, bool send_update);
@@ -186,6 +188,7 @@ class Td final : public NetQueryCallback {
     ResultHandler(const ResultHandler &) = delete;
     ResultHandler &operator=(const ResultHandler &) = delete;
     virtual ~ResultHandler() = default;
+
     virtual void on_result(NetQueryPtr query);
     virtual void on_result(uint64 id, BufferSlice packet) {
       UNREACHABLE();
@@ -197,7 +200,7 @@ class Td final : public NetQueryCallback {
     friend class Td;
 
    protected:
-    void send_query(NetQueryPtr);
+    void send_query(NetQueryPtr query);
 
     Td *td = nullptr;
 
@@ -224,11 +227,13 @@ class Td final : public NetQueryCallback {
   static td_api::object_ptr<td_api::Object> static_request(td_api::object_ptr<td_api::Function> function);
 
  private:
-  static constexpr const char *TDLIB_VERSION = "1.5.0";
+  static constexpr const char *TDLIB_VERSION = "1.6.0";
   static constexpr int64 ONLINE_ALARM_ID = 0;
   static constexpr int64 PING_SERVER_ALARM_ID = -1;
   static constexpr int32 PING_SERVER_TIMEOUT = 300;
   static constexpr int64 TERMS_OF_SERVICE_ALARM_ID = -2;
+
+  void on_connection_state_changed(StateManager::State new_state);
 
   void send_result(uint64 id, tl_object_ptr<td_api::Object> object);
   void send_error(uint64 id, Status error);
@@ -276,6 +281,8 @@ class Td final : public NetQueryCallback {
   MultiTimeout alarm_timeout_{"AlarmTimeout"};
 
   TermsOfService pending_terms_of_service_;
+
+  double last_sent_server_time_difference_ = 1e100;
 
   struct DownloadInfo {
     int32 offset = -1;
@@ -374,6 +381,8 @@ class Td final : public NetQueryCallback {
 
   void on_request(uint64 id, td_api::registerUser &request);
 
+  void on_request(uint64 id, td_api::requestQrCodeAuthentication &request);
+
   void on_request(uint64 id, td_api::checkAuthenticationPassword &request);
 
   void on_request(uint64 id, const td_api::requestAuthenticationPasswordRecovery &request);
@@ -387,6 +396,8 @@ class Td final : public NetQueryCallback {
   void on_request(uint64 id, const td_api::destroy &request);
 
   void on_request(uint64 id, td_api::checkAuthenticationBotToken &request);
+
+  void on_request(uint64 id, td_api::confirmQrCodeAuthentication &request);
 
   void on_request(uint64 id, const td_api::getCurrentState &request);
 
@@ -514,6 +525,8 @@ class Td final : public NetQueryCallback {
 
   void on_request(uint64 id, td_api::searchChatsOnServer &request);
 
+  void on_request(uint64 id, const td_api::searchChatsNearby &request);
+
   void on_request(uint64 id, const td_api::addRecentlyFoundChat &request);
 
   void on_request(uint64 id, const td_api::removeRecentlyFoundChat &request);
@@ -525,6 +538,12 @@ class Td final : public NetQueryCallback {
   void on_request(uint64 id, td_api::checkChatUsername &request);
 
   void on_request(uint64 id, const td_api::getCreatedPublicChats &request);
+
+  void on_request(uint64 id, const td_api::checkCreatedPublicChatsLimit &request);
+
+  void on_request(uint64 id, const td_api::getSuitableDiscussionChats &request);
+
+  void on_request(uint64 id, const td_api::getInactiveSupergroupChats &request);
 
   void on_request(uint64 id, const td_api::openChat &request);
 
@@ -553,6 +572,8 @@ class Td final : public NetQueryCallback {
   void on_request(uint64 id, const td_api::getChatMessageByDate &request);
 
   void on_request(uint64 id, td_api::getChatMessageCount &request);
+
+  void on_request(uint64 id, const td_api::getChatScheduledMessages &request);
 
   void on_request(uint64 id, const td_api::removeNotification &request);
 
@@ -596,6 +617,8 @@ class Td final : public NetQueryCallback {
 
   void on_request(uint64 id, td_api::editInlineMessageReplyMarkup &request);
 
+  void on_request(uint64 id, td_api::editMessageSchedulingState &request);
+
   void on_request(uint64 id, td_api::setGameScore &request);
 
   void on_request(uint64 id, td_api::setInlineGameScore &request);
@@ -610,7 +633,7 @@ class Td final : public NetQueryCallback {
 
   void on_request(uint64 id, td_api::sendChatScreenshotTakenNotification &request);
 
-  void on_request(uint64 id, const td_api::forwardMessages &request);
+  void on_request(uint64 id, td_api::forwardMessages &request);
 
   void on_request(uint64 id, const td_api::resendMessages &request);
 
@@ -644,6 +667,8 @@ class Td final : public NetQueryCallback {
 
   void on_request(uint64 id, const td_api::upgradeBasicGroupChatToSupergroupChat &request);
 
+  void on_request(uint64 id, const td_api::setChatChatList &request);
+
   void on_request(uint64 id, td_api::setChatTitle &request);
 
   void on_request(uint64 id, const td_api::setChatPhoto &request);
@@ -664,6 +689,12 @@ class Td final : public NetQueryCallback {
 
   void on_request(uint64 id, td_api::setChatDescription &request);
 
+  void on_request(uint64 id, const td_api::setChatDiscussionGroup &request);
+
+  void on_request(uint64 id, td_api::setChatLocation &request);
+
+  void on_request(uint64 id, const td_api::setChatSlowModeDelay &request);
+
   void on_request(uint64 id, const td_api::pinChatMessage &request);
 
   void on_request(uint64 id, const td_api::unpinChatMessage &request);
@@ -677,6 +708,10 @@ class Td final : public NetQueryCallback {
   void on_request(uint64 id, const td_api::addChatMembers &request);
 
   void on_request(uint64 id, td_api::setChatMemberStatus &request);
+
+  void on_request(uint64 id, const td_api::canTransferOwnership &request);
+
+  void on_request(uint64 id, td_api::transferChatOwnership &request);
 
   void on_request(uint64 id, const td_api::getChatMember &request);
 
@@ -720,6 +755,8 @@ class Td final : public NetQueryCallback {
 
   void on_request(uint64 id, const td_api::getBlockedUsers &request);
 
+  void on_request(uint64 id, td_api::addContact &request);
+
   void on_request(uint64 id, td_api::importContacts &request);
 
   void on_request(uint64 id, const td_api::getContacts &request);
@@ -733,6 +770,8 @@ class Td final : public NetQueryCallback {
   void on_request(uint64 id, td_api::changeImportedContacts &request);
 
   void on_request(uint64 id, const td_api::clearImportedContacts &request);
+
+  void on_request(uint64 id, const td_api::sharePhoneNumber &request);
 
   void on_request(uint64 id, const td_api::getRecentInlineBots &request);
 
@@ -836,9 +875,7 @@ class Td final : public NetQueryCallback {
 
   void on_request(uint64 id, const td_api::resetAllNotificationSettings &request);
 
-  void on_request(uint64 id, const td_api::getChatReportSpamState &request);
-
-  void on_request(uint64 id, const td_api::changeChatReportSpamState &request);
+  void on_request(uint64 id, const td_api::removeChatActionBar &request);
 
   void on_request(uint64 id, td_api::reportChat &request);
 
@@ -870,7 +907,13 @@ class Td final : public NetQueryCallback {
 
   void on_request(uint64 id, td_api::setPollAnswer &request);
 
+  void on_request(uint64 id, td_api::getPollVoters &request);
+
   void on_request(uint64 id, td_api::stopPoll &request);
+
+  void on_request(uint64 id, const td_api::getLoginUrlInfo &request);
+
+  void on_request(uint64 id, const td_api::getLoginUrl &request);
 
   void on_request(uint64 id, td_api::getInlineQueryResults &request);
 
@@ -897,6 +940,10 @@ class Td final : public NetQueryCallback {
   void on_request(uint64 id, const td_api::deleteSavedOrderInfo &request);
 
   void on_request(uint64 id, const td_api::deleteSavedCredentials &request);
+
+  // void on_request(uint64 id, const td_api::sendTonLiteServerRequest &request);
+
+  // void on_request(uint64 id, const td_api::getTonWalletPasswordSalt &request);
 
   void on_request(uint64 id, td_api::getPassportElement &request);
 

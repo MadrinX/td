@@ -1,5 +1,5 @@
 //
-// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2019
+// Copyright Aliaksei Levin (levlam@telegram.org), Arseny Smirnov (arseny30@gmail.com) 2014-2020
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -12,6 +12,7 @@
 #include "td/telegram/files/FileManager.h"
 #include "td/telegram/Global.h"
 #include "td/telegram/MessagesManager.h"
+#include "td/telegram/StickerSetId.h"
 #include "td/telegram/StickersManager.h"
 #include "td/telegram/WebPagesManager.h"
 
@@ -19,6 +20,7 @@
 #include "td/utils/logging.h"
 #include "td/utils/misc.h"
 #include "td/utils/overloaded.h"
+#include "td/utils/Time.h"
 
 namespace td {
 
@@ -201,12 +203,20 @@ void FileReferenceManager::run_node(NodeId node_id) {
     node.query = {};
     return;
   }
+  if (node.last_successful_repair_time >= Time::now() - 60) {
+    VLOG(file_references) << "Recently repaired file reference for file " << node_id << ", do not try again";
+    for (auto &p : node.query->promises) {
+      p.set_error(Status::Error(429, "Too Many Requests: retry after 60"));
+    }
+    node.query = {};
+    return;
+  }
   auto file_source_id = node.file_source_ids.next();
   send_query({node_id, node.query->generation}, file_source_id);
 }
 
 void FileReferenceManager::send_query(Destination dest, FileSourceId file_source_id) {
-  VLOG(file_references) << "Send file references repair query for file " << dest.node_id << " with generation "
+  VLOG(file_references) << "Send file reference repair query for file " << dest.node_id << " with generation "
                         << dest.generation << " from " << file_source_id;
   auto &node = nodes_[dest.node_id];
   node.query->active_queries++;
@@ -288,7 +298,7 @@ void FileReferenceManager::send_query(Destination dest, FileSourceId file_source
 
 FileReferenceManager::Destination FileReferenceManager::on_query_result(Destination dest, FileSourceId file_source_id,
                                                                         Status status, int32 sub) {
-  VLOG(file_references) << "Receive result of file references repair query for file " << dest.node_id
+  VLOG(file_references) << "Receive result of file reference repair query for file " << dest.node_id
                         << " with generation " << dest.generation << " from " << file_source_id << ": " << status << " "
                         << sub;
   auto &node = nodes_[dest.node_id];
@@ -313,6 +323,7 @@ FileReferenceManager::Destination FileReferenceManager::on_query_result(Destinat
   }
 
   if (status.is_ok()) {
+    node.last_successful_repair_time = Time::now();
     for (auto &p : query->promises) {
       p.set_value(Unit());
     }
@@ -345,7 +356,7 @@ void FileReferenceManager::reload_photo(PhotoSizeSource source, Promise<Unit> pr
       break;
     case PhotoSizeSource::Type::StickerSetThumbnail:
       send_closure(G()->stickers_manager(), &StickersManager::reload_sticker_set,
-                   source.sticker_set_thumbnail().sticker_set_id,
+                   StickerSetId(source.sticker_set_thumbnail().sticker_set_id),
                    source.sticker_set_thumbnail().sticker_set_access_hash, std::move(promise));
       break;
     default:
